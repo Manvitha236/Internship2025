@@ -102,7 +102,7 @@ def load_model():
     model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
     num_ftrs = model.fc.in_features
     model.fc = nn.Linear(num_ftrs, 2)
-    model.load_state_dict(torch.load("best_model.pt", map_location=torch.device('cpu')))
+    model.load_state_dict(torch.load("Model/best_model.pt", map_location=torch.device('cpu')))
     model.eval()
     return model
 
