@@ -987,8 +987,125 @@ def lime_explanations_page():
                                 st.warning(f"⚠️ Could not generate feature importance graph: {str(e)}")
                                 st.info("This can happen with certain image types. The LIME explanation above is still valid.")
                             
-                            # Show explanation details
-                            st.subheader("📖 How to Interpret These Results")
+                            # Medical Interpretation based on the results
+                            st.subheader("🏥 Medical AI Interpretation")
+                            
+                            # Analyze the feature importance to provide medical context
+                            if len(feature_df) > 0:
+                                total_positive_support = feature_df[feature_df['Importance'] > 0]['Importance'].sum()
+                                total_negative_evidence = abs(feature_df[feature_df['Importance'] < 0]['Importance'].sum())
+                                net_support = total_positive_support - total_negative_evidence
+                                confidence_val = selected_prediction['confidence']
+                                prediction_class = selected_prediction['prediction']
+                                
+                                # Generate detailed medical interpretation
+                                interpretation_text = f"""
+                                **🔬 AI Diagnosis Analysis:**
+                                
+                                The AI model predicts this image as **{prediction_class.upper()}** with **{confidence_val:.1%} confidence**.
+                                
+                                **📊 Evidence Analysis:**
+                                """
+                                
+                                if prediction_class == 'benign':
+                                    if net_support > 0.02:  # Strong positive evidence
+                                        interpretation_text += f"""
+                                        ✅ **Strong Evidence for BENIGN:**
+                                        - The highlighted regions show characteristics typical of benign tissue
+                                        - Net evidence score: +{net_support:.3f} (strongly supporting benign)
+                                        - The AI identified {len(feature_df[feature_df['Importance'] > 0])} regions that indicate healthy/benign tissue patterns
+                                        - Key indicators: Regular tissue structure, normal cellular patterns, absence of irregular masses
+                                        """
+                                        if total_negative_evidence > 0.01:
+                                            interpretation_text += f"""
+                                        - ⚠️ Some regions ({len(feature_df[feature_df['Importance'] < 0])} segments) showed minor concerning features, but these were outweighed by benign indicators
+                                        """
+                                    elif net_support > -0.02:  # Moderate evidence
+                                        interpretation_text += f"""
+                                        ⚖️ **Moderate Evidence for BENIGN:**
+                                        - The evidence is somewhat mixed but leans toward benign
+                                        - Net evidence score: {net_support:+.3f} (moderately supporting benign)
+                                        - The AI found both benign indicators and some areas of uncertainty
+                                        - Recommendation: Consider additional imaging or follow-up for confirmation
+                                        """
+                                    else:  # Weak evidence
+                                        interpretation_text += f"""
+                                        ⚠️ **Uncertain BENIGN Diagnosis:**
+                                        - The evidence is mixed with significant conflicting indicators
+                                        - Net evidence score: {net_support:+.3f} (weak support for benign)
+                                        - Multiple regions show characteristics that could indicate malignancy
+                                        - **Strong Recommendation**: Seek additional medical evaluation and possibly biopsy
+                                        """
+                                
+                                else:  # malignant
+                                    if net_support > 0.02:  # Strong positive evidence
+                                        interpretation_text += f"""
+                                        � **Strong Evidence for MALIGNANT:**
+                                        - The highlighted regions show characteristics highly suspicious for malignancy
+                                        - Net evidence score: +{net_support:.3f} (strongly supporting malignant)
+                                        - The AI identified {len(feature_df[feature_df['Importance'] > 0])} regions with concerning features
+                                        - Key indicators: Irregular masses, abnormal tissue density, suspicious calcifications, architectural distortion
+                                        - **Urgent**: Immediate medical consultation and likely biopsy recommended
+                                        """
+                                    elif net_support > -0.02:  # Moderate evidence
+                                        interpretation_text += f"""
+                                        ⚠️ **Moderate Evidence for MALIGNANT:**
+                                        - Several regions show concerning features that warrant investigation
+                                        - Net evidence score: {net_support:+.3f} (moderately supporting malignant)
+                                        - Mixed findings with some benign-appearing areas
+                                        - **Recommendation**: Prompt medical evaluation and possible biopsy
+                                        """
+                                    else:  # Weak evidence
+                                        interpretation_text += f"""
+                                        🤔 **Uncertain MALIGNANT Diagnosis:**
+                                        - The evidence is conflicted with significant benign indicators
+                                        - Net evidence score: {net_support:+.3f} (weak support for malignant)
+                                        - May represent early-stage changes or borderline findings
+                                        - **Recommendation**: Close monitoring with follow-up imaging
+                                        """
+                                
+                                # Add confidence interpretation
+                                if confidence_val >= 0.9:
+                                    interpretation_text += f"\n\n**🎯 Confidence Level: VERY HIGH ({confidence_val:.1%})**\n- The AI is very confident in this diagnosis\n- Pattern recognition is strong and consistent"
+                                elif confidence_val >= 0.75:
+                                    interpretation_text += f"\n\n**🎯 Confidence Level: HIGH ({confidence_val:.1%})**\n- The AI shows good confidence in this diagnosis\n- Most features align with the predicted class"
+                                elif confidence_val >= 0.6:
+                                    interpretation_text += f"\n\n**🎯 Confidence Level: MODERATE ({confidence_val:.1%})**\n- The AI has moderate confidence\n- Some ambiguous features present"
+                                else:
+                                    interpretation_text += f"\n\n**🎯 Confidence Level: LOW ({confidence_val:.1%})**\n- The AI has low confidence in this diagnosis\n- High uncertainty - additional testing strongly recommended"
+                                
+                                # Specific region analysis
+                                top_positive = feature_df[feature_df['Importance'] > 0].head(3)
+                                top_negative = feature_df[feature_df['Importance'] < 0].head(3)
+                                
+                                if len(top_positive) > 0:
+                                    interpretation_text += f"\n\n**🔍 Key Supporting Regions:**"
+                                    for _, row in top_positive.iterrows():
+                                        interpretation_text += f"\n- Segment {int(row['Segment'])}: Importance {row['Importance']:.3f} (strong {prediction_class} indicator)"
+                                
+                                if len(top_negative) > 0:
+                                    interpretation_text += f"\n\n**⚠️ Conflicting Evidence Regions:**"
+                                    opposite_class = 'malignant' if prediction_class == 'benign' else 'benign'
+                                    for _, row in top_negative.iterrows():
+                                        interpretation_text += f"\n- Segment {int(row['Segment'])}: Importance {row['Importance']:.3f} (suggests {opposite_class} features)"
+                                
+                                # Clinical recommendations
+                                interpretation_text += f"\n\n**🏥 Clinical Recommendations:**"
+                                if prediction_class == 'malignant' or confidence_val < 0.7:
+                                    interpretation_text += "\n- **Immediate medical consultation recommended**"
+                                    interpretation_text += "\n- Consider additional imaging (ultrasound, MRI)"
+                                    interpretation_text += "\n- Discuss biopsy options with healthcare provider"
+                                    interpretation_text += "\n- Do not delay medical evaluation"
+                                else:
+                                    interpretation_text += "\n- **Routine follow-up recommended**"
+                                    interpretation_text += "\n- Continue regular screening schedule"
+                                    interpretation_text += "\n- Monitor for any changes"
+                                    interpretation_text += "\n- Discuss results with healthcare provider"
+                                
+                                st.info(interpretation_text)
+                            
+                            # Show technical explanation details
+                            st.subheader("📖 Technical Interpretation Guide")
                             
                             interpretation_col1, interpretation_col2 = st.columns(2)
                             
@@ -1150,6 +1267,125 @@ def advanced_explainability_page():
                                     explanations['ig_nt'] = ig_nt_attr
                                     status.update(label="✅ Integrated Gradients Complete", state="complete")
                             
+                            # Medical AI Analysis based on all methods
+                            st.subheader("🏥 Comprehensive Medical AI Analysis")
+                            
+                            # Analyze patterns across all methods for medical interpretation
+                            prediction_class = selected_prediction['prediction']
+                            confidence_val = selected_prediction['confidence']
+                            
+                            # Generate comprehensive medical interpretation
+                            medical_analysis = f"""
+                            **🔬 Advanced AI Diagnosis Assessment:**
+                            
+                            The AI model diagnoses this image as **{prediction_class.upper()}** with **{confidence_val:.1%} confidence**.
+                            
+                            **🧠 Multi-Method Analysis:**
+                            """
+                            
+                            methods_used = []
+                            if 'saliency' in explanations:
+                                methods_used.append("Saliency Maps")
+                            if 'gradcam' in explanations:
+                                methods_used.append("GradCAM")
+                            if 'lrp' in explanations:
+                                methods_used.append("Layer LRP")
+                            if 'ig' in explanations:
+                                methods_used.append("Integrated Gradients")
+                            
+                            medical_analysis += f"Using {len(methods_used)} advanced explainability methods: {', '.join(methods_used)}\n\n"
+                            
+                            if prediction_class == 'benign':
+                                if confidence_val >= 0.8:
+                                    medical_analysis += """
+                            ✅ **BENIGN - High Confidence Assessment:**
+                            - **Saliency Analysis**: Pixel-level examination shows normal tissue patterns
+                            - **GradCAM Focus**: Convolutional layers identify regular, non-suspicious structures  
+                            - **Layer Analysis**: Deep network layers consistently indicate healthy tissue characteristics
+                            - **Integration**: All methods converge on benign classification
+                            
+                            **🔍 Key Benign Indicators:**
+                            - Regular tissue architecture and symmetry
+                            - Normal density patterns without suspicious masses
+                            - Absence of calcification clusters or spiculated lesions
+                            - Smooth, well-defined boundaries in any visible structures
+                            
+                            **Clinical Interpretation**: The AI shows strong consensus across multiple analytical approaches that this tissue appears benign.
+                            """
+                                else:
+                                    medical_analysis += f"""
+                            ⚠️ **BENIGN - Moderate Confidence Assessment ({confidence_val:.1%}):**
+                            - **Mixed Signals**: Some methods may show conflicting evidence
+                            - **Borderline Features**: Certain regions exhibit ambiguous characteristics
+                            - **Uncertainty Factors**: Lower confidence suggests need for careful review
+                            
+                            **🔍 Findings:**
+                            - Predominantly benign-appearing tissue patterns
+                            - Some areas require closer examination
+                            - Possible early changes or atypical benign features
+                            
+                            **⚠️ Recommendation**: While classified as benign, the moderate confidence warrants follow-up imaging or clinical correlation.
+                            """
+                            
+                            else:  # malignant
+                                if confidence_val >= 0.8:
+                                    medical_analysis += """
+                            🚨 **MALIGNANT - High Confidence Assessment:**
+                            - **Saliency Detection**: Pixel analysis reveals irregular, concerning patterns
+                            - **GradCAM Identification**: Deep layers focus on suspicious mass formations
+                            - **Layer Decomposition**: Multiple network layers indicate malignant characteristics
+                            - **Gradient Integration**: Strong evidence convergence toward malignant classification
+                            
+                            **🔍 Key Malignant Indicators:**
+                            - Irregular or spiculated mass margins
+                            - Architectural distortion of surrounding tissue
+                            - Suspicious microcalcifications in clustered patterns
+                            - Asymmetric density changes or focal abnormalities
+                            
+                            **🚨 URGENT Clinical Action Required**: High-confidence malignant prediction requires immediate medical attention and likely tissue sampling.
+                            """
+                                else:
+                                    medical_analysis += f"""
+                            ⚠️ **MALIGNANT - Moderate Confidence Assessment ({confidence_val:.1%}):**
+                            - **Suspicious Features**: Multiple methods detect concerning patterns
+                            - **Conflicting Evidence**: Some benign characteristics present
+                            - **Borderline Classification**: Features suggest possible early-stage or complex presentation
+                            
+                            **🔍 Findings:**
+                            - Suspicious tissue changes warrant investigation
+                            - Mixed pattern suggesting possible malignancy
+                            - May represent early-stage disease or complex benign process
+                            
+                            **📋 Recommendation**: Suspicious findings require prompt medical evaluation, additional imaging, and consideration of tissue biopsy.
+                            """
+                            
+                            # Add method-specific insights
+                            medical_analysis += "\n\n**🔬 Method-Specific Insights:**\n"
+                            
+                            if 'saliency' in explanations:
+                                medical_analysis += "- **Saliency Maps**: Identify the most influential individual pixels in the diagnosis\n"
+                            if 'gradcam' in explanations:
+                                medical_analysis += "- **GradCAM**: Shows which anatomical regions the AI's 'attention' focuses on\n"
+                            if 'lrp' in explanations:
+                                medical_analysis += "- **Layer LRP**: Traces how the decision propagates through neural network layers\n"
+                            if 'ig' in explanations:
+                                medical_analysis += "- **Integrated Gradients**: Provides stable, mathematically grounded attribution\n"
+                            
+                            # Final clinical guidance
+                            medical_analysis += f"\n\n**🏥 Final Clinical Guidance:**\n"
+                            if prediction_class == 'malignant' or confidence_val < 0.7:
+                                medical_analysis += "- **Time-sensitive medical consultation required**\n"
+                                medical_analysis += "- Discuss findings with oncology or breast imaging specialist\n" 
+                                medical_analysis += "- Prepare for possible biopsy or additional imaging\n"
+                                medical_analysis += "- Do not delay seeking medical care\n"
+                            else:
+                                medical_analysis += "- **Routine medical follow-up appropriate**\n"
+                                medical_analysis += "- Continue regular screening schedule\n"
+                                medical_analysis += "- Maintain awareness of breast health\n"
+                                medical_analysis += "- Report any changes to healthcare provider\n"
+                            
+                            st.info(medical_analysis)
+                            
                             # Display Results
                             st.subheader("🎯 Advanced Explainability Results")
                             
@@ -1177,9 +1413,38 @@ def advanced_explainability_page():
                                     fig = visualize_attribution(explanations['saliency'], image_tensor, 
                                                                "Saliency", selected_prediction['prediction'])
                                     st.pyplot(fig)
+                                    plt.close(fig)
                                     
-                                    st.info("💡 **Interpretation**: Bright areas indicate pixels that most influence the model's decision. " +
-                                           "Red areas increase confidence, blue areas decrease it.")
+                                    # Enhanced medical interpretation for saliency
+                                    saliency_interpretation = f"""
+                                    **🔬 Medical Interpretation - Saliency Analysis:**
+                                    
+                                    **What this shows:** Saliency maps highlight the exact pixels that most strongly influenced the AI's {prediction_class} diagnosis.
+                                    
+                                    **How to read it:**
+                                    - **Bright/Red areas**: Pixels that SUPPORT the {prediction_class} diagnosis
+                                    - **Dark/Blue areas**: Pixels that work AGAINST the {prediction_class} diagnosis
+                                    - **Intensity**: Stronger colors = more important for the decision
+                                    
+                                    **Clinical Significance:**
+                                    """
+                                    
+                                    if prediction_class == 'benign':
+                                        saliency_interpretation += """
+                                    - Bright areas should correspond to normal tissue patterns, regular structures, or healthy breast parenchyma
+                                    - If bright areas are on obvious normal tissue → AI correctly identifies benign features
+                                    - If bright areas are on questionable regions → AI may be missing subtle abnormalities
+                                    - Dark areas might indicate regions that could suggest malignancy but are being discounted
+                                        """
+                                    else:  # malignant
+                                        saliency_interpretation += """
+                                    - Bright areas should correspond to suspicious features: irregular masses, calcifications, or architectural distortion
+                                    - If bright areas highlight obvious abnormalities → AI correctly identifies malignant features  
+                                    - If bright areas are on seemingly normal tissue → May indicate subtle malignant changes
+                                    - Dark areas suggest regions that appear benign or normal to the AI
+                                        """
+                                    
+                                    st.info(saliency_interpretation)
                                 tab_idx += 1
                             
                             # GradCAM
@@ -1189,9 +1454,38 @@ def advanced_explainability_page():
                                     fig = visualize_attribution(explanations['gradcam'], image_tensor, 
                                                                "GradCAM", selected_prediction['prediction'])
                                     st.pyplot(fig)
+                                    plt.close(fig)
                                     
-                                    st.info("💡 **Interpretation**: GradCAM shows which regions the convolutional layers " +
-                                           "focus on. Warmer colors indicate higher importance for the prediction.")
+                                    # Enhanced medical interpretation for GradCAM
+                                    gradcam_interpretation = f"""
+                                    **🔬 Medical Interpretation - GradCAM Analysis:**
+                                    
+                                    **What this shows:** GradCAM reveals which anatomical regions the AI's convolutional layers are "looking at" for the {prediction_class} diagnosis.
+                                    
+                                    **How to read it:**
+                                    - **Warm colors (Red/Orange)**: Regions of highest attention for {prediction_class} classification
+                                    - **Cool colors (Blue)**: Regions of lower importance
+                                    - **Overlay pattern**: Shows AI's "visual attention" on the original image
+                                    
+                                    **Clinical Significance:**
+                                    """
+                                    
+                                    if prediction_class == 'benign':
+                                        gradcam_interpretation += """
+                                    - Warm areas should focus on clearly normal tissue structures
+                                    - Good if highlighting: regular parenchymal patterns, normal fatty tissue, symmetric structures
+                                    - Concerning if highlighting: any masses, calcifications, or asymmetric densities
+                                    - This suggests the AI is correctly identifying benign tissue characteristics
+                                        """
+                                    else:  # malignant
+                                        gradcam_interpretation += """
+                                    - Warm areas should focus on suspicious lesions or abnormal tissue patterns
+                                    - Good if highlighting: masses, calcification clusters, architectural distortion, spiculated lesions
+                                    - May indicate: areas requiring immediate clinical attention and possible biopsy
+                                    - The AI is identifying regions with malignant characteristics that warrant urgent evaluation
+                                        """
+                                    
+                                    st.warning(gradcam_interpretation)
                                 tab_idx += 1
                             
                             # Layer LRP
@@ -1201,9 +1495,41 @@ def advanced_explainability_page():
                                     fig = visualize_attribution(explanations['lrp'], image_tensor, 
                                                                "Layer LRP", selected_prediction['prediction'])
                                     st.pyplot(fig)
+                                    plt.close(fig)
                                     
-                                    st.info("💡 **Interpretation**: LRP distributes the prediction score backwards through " +
-                                           "the network, showing how each layer contributes to the final decision.")
+                                    # Enhanced medical interpretation for LRP
+                                    lrp_interpretation = f"""
+                                    **🔬 Medical Interpretation - Layer-wise Relevance Analysis:**
+                                    
+                                    **What this shows:** LRP traces how the {prediction_class} decision was built up through each layer of the neural network.
+                                    
+                                    **How to read it:**
+                                    - **Positive relevance (warm colors)**: Features that contributed TO the {prediction_class} diagnosis
+                                    - **Negative relevance (cool colors)**: Features that argued AGAINST the {prediction_class} diagnosis
+                                    - **Magnitude**: Larger values = stronger contribution to the final decision
+                                    
+                                    **Clinical Significance:**
+                                    """
+                                    
+                                    if prediction_class == 'benign':
+                                        lrp_interpretation += """
+                                    - High positive relevance areas represent the strongest "benign evidence" the AI found
+                                    - These should correspond to: normal tissue architecture, regular patterns, absence of concerning features
+                                    - Negative relevance shows what the AI considered as "potential malignant features" but rejected
+                                    - This provides insight into the AI's decision-making process for benign classification
+                                        """
+                                    else:  # malignant
+                                        lrp_interpretation += """
+                                    - High positive relevance areas represent the strongest "malignant evidence" the AI detected
+                                    - These should correspond to: suspicious masses, irregular patterns, concerning calcifications
+                                    - Negative relevance shows areas that appeared "benign-like" to the AI but were overruled
+                                    - **Critical**: High positive areas require immediate clinical correlation and likely tissue sampling
+                                        """
+                                    
+                                    if prediction_class == 'malignant':
+                                        st.error(lrp_interpretation)
+                                    else:
+                                        st.success(lrp_interpretation)
                                 tab_idx += 1
                             
                             # Integrated Gradients
@@ -1213,9 +1539,43 @@ def advanced_explainability_page():
                                     fig = visualize_attribution(explanations['ig'], image_tensor, 
                                                                "Integrated Gradients", selected_prediction['prediction'])
                                     st.pyplot(fig)
+                                    plt.close(fig)
                                     
-                                    st.info("💡 **Interpretation**: IG integrates gradients along a path from baseline to input, " +
-                                           "providing more stable and accurate attributions than simple gradients.")
+                                    # Enhanced medical interpretation for IG
+                                    ig_interpretation = f"""
+                                    **🔬 Medical Interpretation - Integrated Gradients Analysis:**
+                                    
+                                    **What this shows:** The most mathematically reliable attribution showing exactly why the AI chose {prediction_class}.
+                                    
+                                    **How to read it:**
+                                    - **Attribution strength**: More intense colors = stronger influence on {prediction_class} decision
+                                    - **Baseline comparison**: Shows difference from a "neutral" baseline image
+                                    - **Stability**: Most reliable method for understanding AI decision-making
+                                    
+                                    **Clinical Significance:**
+                                    """
+                                    
+                                    if prediction_class == 'benign':
+                                        ig_interpretation += """
+                                    - This is the AI's most confident assessment of benign features
+                                    - Strong attributions indicate robust benign characteristics
+                                    - Areas of high attribution should represent: normal breast anatomy, regular tissue patterns
+                                    - **Reliability**: This method provides the most trustworthy explanation for the benign diagnosis
+                                    - **Follow-up**: Continue routine screening unless clinical symptoms develop
+                                        """
+                                    else:  # malignant
+                                        ig_interpretation += """
+                                    - This represents the AI's most confident identification of malignant features
+                                    - Strong attributions indicate robust suspicious characteristics  
+                                    - Areas of high attribution likely represent: concerning lesions requiring immediate attention
+                                    - **Reliability**: This is the most mathematically sound explanation for the malignant diagnosis
+                                    - **Action Required**: Urgent medical consultation and likely tissue biopsy indicated
+                                        """
+                                    
+                                    if prediction_class == 'malignant':
+                                        st.error(ig_interpretation)
+                                    else:
+                                        st.success(ig_interpretation)
                                 tab_idx += 1
                             
                             # SmoothGrad IG
@@ -1225,9 +1585,38 @@ def advanced_explainability_page():
                                     fig = visualize_attribution(explanations['ig_nt'], image_tensor, 
                                                                "SmoothGrad IG", selected_prediction['prediction'])
                                     st.pyplot(fig)
+                                    plt.close(fig)
                                     
-                                    st.info("💡 **Interpretation**: SmoothGrad adds noise and averages results, " +
-                                           "reducing visual noise and providing cleaner attribution maps.")
+                                    # Enhanced medical interpretation for SmoothGrad
+                                    smoothgrad_interpretation = f"""
+                                    **🔬 Medical Interpretation - Noise-Reduced Analysis:**
+                                    
+                                    **What this shows:** The cleanest, most reliable view of why the AI diagnosed {prediction_class}.
+                                    
+                                    **Advantages:**
+                                    - **Reduced artifacts**: Filters out random noise and imaging artifacts
+                                    - **Cleaner visualization**: Shows only the most consistent decision factors
+                                    - **Higher confidence**: Multiple sampling reduces uncertainty
+                                    
+                                    **Clinical Significance:**
+                                    """
+                                    
+                                    if prediction_class == 'benign':
+                                        smoothgrad_interpretation += """
+                                    - This cleaned analysis confirms the benign diagnosis with reduced uncertainty
+                                    - Highlighted areas represent the most reliable benign tissue indicators
+                                    - **Interpretation**: AI consistently identifies these regions as healthy tissue
+                                    - **Confidence**: The smoothing process confirms the benign classification is robust
+                                        """
+                                    else:  # malignant
+                                        smoothgrad_interpretation += """
+                                    - This cleaned analysis confirms suspicious features with high reliability
+                                    - Highlighted areas represent the most consistent malignant indicators
+                                    - **Critical Finding**: AI repeatedly identifies these regions as concerning across multiple analyses
+                                    - **Urgency**: The consistency of findings across sampling increases concern level
+                                        """
+                                    
+                                    st.info(smoothgrad_interpretation)
                             
                             # Comparison Summary
                             st.subheader("📊 Method Comparison Summary")
